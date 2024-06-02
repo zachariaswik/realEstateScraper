@@ -12,12 +12,20 @@ BOT_NAME = "pisosScraper"
 SPIDER_MODULES = ["pisosScraper.spiders"]
 NEWSPIDER_MODULE = "pisosScraper.spiders"
 
+# Delay between requests to the same domain
+DOWNLOAD_DELAY = 3  # 3 seconds
+
+# Randomize the download delay to make it less predictable
+RANDOMIZE_DOWNLOAD_DELAY = True
 
 # Crawl responsibly by identifying yourself (and your website) on the user-agent
 #USER_AGENT = "pisosScraper (+http://www.yourdomain.com)"
 
 # Obey robots.txt rules
 ROBOTSTXT_OBEY = True
+
+
+
 
 # Configure maximum concurrent requests performed by Scrapy (default: 16)
 #CONCURRENT_REQUESTS = 32
@@ -50,9 +58,10 @@ ROBOTSTXT_OBEY = True
 
 # Enable or disable downloader middlewares
 # See https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
-#DOWNLOADER_MIDDLEWARES = {
+DOWNLOADER_MIDDLEWARES = {
 #    "pisosScraper.middlewares.PisosscraperDownloaderMiddleware": 543,
-#}
+    'pisosScraper.middlewares.RandomUserAgentMiddleware': 543,
+}
 
 # Enable or disable extensions
 # See https://docs.scrapy.org/en/latest/topics/extensions.html

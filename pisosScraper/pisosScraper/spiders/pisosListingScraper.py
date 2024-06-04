@@ -16,8 +16,17 @@ class PisoslistingscraperSpider(scrapy.Spider):
 
 
     def start_requests(self):
-        url = "https://www.pisos.com/viviendas/barcelona"
-        yield scrapy.Request(url, self.parse, meta={'fullRegionName':'barcelona'})
+
+
+        # startURLs = ["https://www.pisos.com/locales/barcelona", "https://www.pisos.com/naves/barcelona",
+        #               "https://www.pisos.com/garajes/barcelona", "https://www.pisos.com/terrenos/barcelona"]
+
+
+        startURLs = ["https://www.pisos.com/viviendas/barcelona"]
+
+
+        for startURL in startURLs:
+            yield scrapy.Request(startURL, self.parse, meta={'fullRegionName':'barcelona'})
 
     #rules = (Rule(LinkExtractor(restrict_xpaths="//a[@class='ad-preview__title']"), callback="parse_item", follow=True),)
 
@@ -61,29 +70,31 @@ class PisoslistingscraperSpider(scrapy.Spider):
         diggitsPattern = re.compile(r'\d+')
         for infoBox in infoBoxes:
 
-
-
             try:
-                price = int(diggitsPattern.search(infoBox.css('div.ad-preview__inline span::text').get().strip().replace('.', ''))[0])
+                price = int(diggitsPattern.search(infoBox.css('span.ad-preview__price::text').get().strip().replace('.', ''))[0])
             except:
                 logging.log(logging.INFO, "Price could not be found")
                 price = None
 
-            try:
-                rooms = int(diggitsPattern.search(infoBox.css("div.ad-preview__inline p::text")[0].get())[0])
-            except:
-                logging.log(logging.INFO, "Rooms number could not be found")
-                rooms = None
-            try:
-                bathrooms = int(diggitsPattern.search(infoBox.css("div.ad-preview__inline p::text")[1].get())[0])
-            except:
-                logging.log(logging.INFO, "Bathrooms number could not be found")
-                bathrooms = None
-            try:
-                size      = int(diggitsPattern.search(infoBox.css("div.ad-preview__inline p::text")[2].get())[0])
-            except:
-                logging.log(logging.INFO, "Size could not be found")
-                size = None
+
+            # Gets number and then key (as described above)
+            descriptions = infoBox.css('div.ad-preview__inline p::text').getall()
+            pattern = re.compile(r'(\d+)\s(\w+)|(\d+)ª\s(\w+)')
+            size = None; bathrooms = None; rooms = None; floor = None
+            for d in descriptions:
+                m = pattern.search(d)
+                try:
+                    if(m[2] == 'm²'):
+                        size = int(m[1])
+                    elif(m[2] == 'baño'):
+                        bathrooms = int(m[1])
+                    elif(m[2] == 'habs'):
+                        rooms = int(m[1])
+                    elif(m[4] == 'planta' or m[4] == 'atico' or m[4] == 'bajo'):
+                        floor = m[3]
+                except:
+                    logging.log(logging.INFO, "Could not parse deccription")
+
 
             yield{
                     'location' : response.meta['fullRegionName'],
@@ -91,6 +102,7 @@ class PisoslistingscraperSpider(scrapy.Spider):
                     'rooms' : rooms,
                     'bathrooms' : bathrooms,
                     'size'  : size,
+                    'floor' : floor,
                     'type'  : typeOfListing
                 }
 

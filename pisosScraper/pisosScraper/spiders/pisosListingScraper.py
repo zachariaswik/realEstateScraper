@@ -46,9 +46,8 @@ class PisoslistingscraperSpider(scrapy.Spider):
                 yield response.follow(subregionLink, callback=self.parseListings, meta = {'fullRegionName' : fullRegionName})
 
             else:
-                continue
                 # Uncomment to go subregions all listings
-                # yield response.follow(subregionLink, callback=self.parse, meta = {'fullRegionName' : fullRegionName})
+                yield response.follow(subregionLink, callback=self.parse, meta = {'fullRegionName' : fullRegionName})
 
 
 
@@ -70,6 +69,10 @@ class PisoslistingscraperSpider(scrapy.Spider):
         diggitsPattern = re.compile(r'\d+')
         for infoBox in infoBoxes:
 
+            # listing name
+            listingName = infoBox.css('div.ad-preview__section a::attr(href)').get()
+            listingName = urljoin(self.base_url, listingName)
+
             try:
                 price = int(diggitsPattern.search(infoBox.css('span.ad-preview__price::text').get().strip().replace('.', ''))[0])
             except:
@@ -77,7 +80,8 @@ class PisoslistingscraperSpider(scrapy.Spider):
                 price = None
 
 
-            # Gets number and then key (as described above)
+
+
             descriptions = infoBox.css('div.ad-preview__inline p::text').getall()
             pattern = re.compile(r'(\d+)\s(\w+)|(\d+)ª\s(\w+)')
             size = None; bathrooms = None; rooms = None; floor = None
@@ -97,6 +101,7 @@ class PisoslistingscraperSpider(scrapy.Spider):
 
 
             yield{
+                    'listingName' : listingName,
                     'location' : response.meta['fullRegionName'],
                     'price' : price,
                     'rooms' : rooms,

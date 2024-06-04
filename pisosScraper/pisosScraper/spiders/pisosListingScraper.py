@@ -11,11 +11,13 @@ import logging
 class PisoslistingscraperSpider(scrapy.Spider):
     name = "pisosListingScraper"
     allowed_domains = ["www.pisos.com"]
-    start_urls = ["https://www.pisos.com/viviendas/barcelona"]
+    # start_urls = ["https://www.pisos.com/viviendas/barcelona"]
     base_url = "https://www.pisos.com"
 
 
-
+    def start_requests(self):
+        url = "https://www.pisos.com/viviendas/barcelona"
+        yield scrapy.Request(url, self.parse, meta={'fullRegionName':'barcelona'})
 
     #rules = (Rule(LinkExtractor(restrict_xpaths="//a[@class='ad-preview__title']"), callback="parse_item", follow=True),)
 
@@ -23,19 +25,21 @@ class PisoslistingscraperSpider(scrapy.Spider):
         self.logger.info("A response from %s just arrived!", response.url)
         subregions = response.css('div.zoneList a.item:not(.item-subitem)')
         listingsPattern = re.compile(r'venta')
+        prevRegionName = response.meta['fullRegionName']
 
         for subregion in subregions:
+            fullRegionName = f"{prevRegionName}_{subregion.css('span::text').get()}"
             subregionLink = urljoin(self.base_url, subregion.css('a::attr(href)').get())
             numListing = int(subregion.css('a span.total::text').get().strip('()').replace('.',''))
             isListings = listingsPattern.search(subregionLink)
 
             if isListings:
-                yield response.follow(subregionLink, callback=self.parseListings)
+                yield response.follow(subregionLink, callback=self.parseListings, meta = {'fullRegionName' : fullRegionName})
 
             else:
                 continue
                 # Uncomment to go subregions all listings
-                # yield response.follow(subregionLink, callback=self.parse)
+                # yield response.follow(subregionLink, callback=self.parse, meta = {'fullRegionName' : fullRegionName})
 
 
 
@@ -46,29 +50,27 @@ class PisoslistingscraperSpider(scrapy.Spider):
         # listings = response.css('div.ad-preview__section a::attr(href)')
 
 
-        # for listing in listings:
-        #     listing_url = urljoin(self.base_url, listings.get())
-
-        #     yield {
-        #         'listing_url' : listing_url
-        #     }
-
         # For getting the data from the page immediately
+        pattern = re.compile(r'\b([^\s/]+)\-\b([^\s/]+)\/')
+        listingsURL = response.url
+
+        typeOfListing = pattern.search(listingsURL)[1]
+        location      = pattern.search(listingsURL)[2]
+
         infoBoxes   = response.css('div.ad-preview__info')
         diggitsPattern = re.compile(r'\d+')
         for infoBox in infoBoxes:
 
 
 
-            ## These might fail!
             try:
-                price     = int(diggitsPattern.search(infoBox.css('div.ad-preview__inline span::text').get().strip().replace('.', ''))[0])
+                price = int(diggitsPattern.search(infoBox.css('div.ad-preview__inline span::text').get().strip().replace('.', ''))[0])
             except:
                 logging.log(logging.INFO, "Price could not be found")
                 price = None
 
             try:
-                rooms     = int(diggitsPattern.search(infoBox.css("div.ad-preview__inline p::text")[0].get())[0])
+                rooms = int(diggitsPattern.search(infoBox.css("div.ad-preview__inline p::text")[0].get())[0])
             except:
                 logging.log(logging.INFO, "Rooms number could not be found")
                 rooms = None
@@ -84,10 +86,12 @@ class PisoslistingscraperSpider(scrapy.Spider):
                 size = None
 
             yield{
+                    'location' : response.meta['fullRegionName'],
                     'price' : price,
                     'rooms' : rooms,
                     'bathrooms' : bathrooms,
-                    'size'  : size
+                    'size'  : size,
+                    'type'  : typeOfListing
                 }
 
 
@@ -95,7 +99,7 @@ class PisoslistingscraperSpider(scrapy.Spider):
         nextPage = response.css('div.pagination__next a::attr(href)').get()
         if nextPage is not None: # or just if next_button?
             nextPage = urljoin(self.base_url, nextPage)
-            yield response.follow(nextPage, callback=self.parseListings)
+            yield response.follow(nextPage, callback=self.parseListings, meta={'fullRegionName' : response.meta['fullRegionName']})
 
 
         # Get price

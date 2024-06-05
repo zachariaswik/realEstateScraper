@@ -11,24 +11,17 @@ import logging
 class PisoslistingscraperSpider(scrapy.Spider):
     name = "pisosListingScraper"
     allowed_domains = ["www.pisos.com"]
-    # start_urls = ["https://www.pisos.com/viviendas/barcelona"]
     base_url = "https://www.pisos.com"
 
 
     def start_requests(self):
-
-
         # startURLs = ["https://www.pisos.com/locales/barcelona", "https://www.pisos.com/naves/barcelona",
         #               "https://www.pisos.com/garajes/barcelona", "https://www.pisos.com/terrenos/barcelona"]
 
-
         startURLs = ["https://www.pisos.com/viviendas/barcelona"]
-
-
         for startURL in startURLs:
             yield scrapy.Request(startURL, self.parse, meta={'fullRegionName':'barcelona'})
 
-    #rules = (Rule(LinkExtractor(restrict_xpaths="//a[@class='ad-preview__title']"), callback="parse_item", follow=True),)
 
     def parse(self, response):
         self.logger.info("A response from %s just arrived!", response.url)
@@ -46,71 +39,30 @@ class PisoslistingscraperSpider(scrapy.Spider):
                 yield response.follow(subregionLink, callback=self.parseListings, meta = {'fullRegionName' : fullRegionName})
 
             else:
-                # Uncomment to go subregions all listings
                 yield response.follow(subregionLink, callback=self.parse, meta = {'fullRegionName' : fullRegionName})
 
 
 
 
     def parseListings(self, response):
-        ## For following the listing fully
-        # num_listings = response.css('div.grid__title span::text').getall()[1]
-        # listings = response.css('div.ad-preview__section a::attr(href)')
-
 
         # For getting the data from the page immediately
         pattern = re.compile(r'\b([^\s/]+)\-\b([^\s/]+)\/')
-        listingsURL = response.url
-
-        typeOfListing = pattern.search(listingsURL)[1]
-        location      = pattern.search(listingsURL)[2]
+        typeOfListing = pattern.search(response.url)[1]
 
         infoBoxes   = response.css('div.ad-preview__info')
-        diggitsPattern = re.compile(r'\d+')
         for infoBox in infoBoxes:
 
             # listing name
             listingName = infoBox.css('div.ad-preview__section a::attr(href)').get()
             listingName = urljoin(self.base_url, listingName)
 
-            try:
-                price = int(diggitsPattern.search(infoBox.css('span.ad-preview__price::text').get().strip().replace('.', ''))[0])
-            except:
-                logging.log(logging.INFO, "Price could not be found")
-                price = None
-
-
-
-
-            descriptions = infoBox.css('div.ad-preview__inline p::text').getall()
-            pattern = re.compile(r'(\d+)\s(\w+)|(\d+)ª\s(\w+)')
-            size = None; bathrooms = None; rooms = None; floor = None
-            for d in descriptions:
-                m = pattern.search(d)
-                try:
-                    if(m[2] == 'm²'):
-                        size = int(m[1])
-                    elif(m[2] == 'baño'):
-                        bathrooms = int(m[1])
-                    elif(m[2] == 'habs'):
-                        rooms = int(m[1])
-                    elif(m[4] == 'planta' or m[4] == 'atico' or m[4] == 'bajo'):
-                        floor = m[3]
-                except:
-                    logging.log(logging.INFO, "Could not parse deccription")
-
-
-            yield{
-                    'listingName' : listingName,
-                    'location' : response.meta['fullRegionName'],
-                    'price' : price,
-                    'rooms' : rooms,
-                    'bathrooms' : bathrooms,
-                    'size'  : size,
-                    'floor' : floor,
-                    'type'  : typeOfListing
-                }
-
+            # Enter every listing to get full data
+            yield response.follow(listingName, callback=self.parseSingleListing,
+                                  meta={'fullRegionName' : response.meta['fullRegionName'],
+                                        'type'           : typeOfListing
+                                       }
+                                    )
 
         # PAGINATION
         nextPage = response.css('div.pagination__next a::attr(href)').get()
@@ -119,14 +71,122 @@ class PisoslistingscraperSpider(scrapy.Spider):
             yield response.follow(nextPage, callback=self.parseListings, meta={'fullRegionName' : response.meta['fullRegionName']})
 
 
-        # Get price
-        # response.css('div.ad-preview__bottom div.ad-preview__info div.ad-preview__section div.ad-preview__inline span::text').getall()
-        # response.css('div.ad-preview__bottom div.ad-preview__inline span::text').get()
-
-
-
-
 
     # For individual listing
     def parseSingleListing(self,response):
-        pass
+
+        features = response.css('div.features__content')
+        numPattern = re.compile(r'\d+')
+
+        description = response.css('div.description__content::text').getall()
+        try:
+            description = ' '.join(description).strip().replace('\r', '')
+        except:
+            logging.log(logging.INFO, "description not found")
+
+
+        price = response.css('div.jsPriceValue::text').get()
+        try:
+            price = int(numPattern.search(price.replace('.', ''))[0])
+        except:
+            logging.log(logging.INFO, "price not included")
+
+
+        # Get superficie construida
+        sizeConstr = features.css('span.icon-superficiecontruida + div span.features__value::text').get()
+        try:
+            sizeConstr = int(numPattern.search(sizeConstr.replace('.', ''))[0])
+        except:
+            logging.log(logging.INFO, "superficie construida not included")
+
+
+        # Get superficie util
+        sizeUtil = features.css('span.icon-superficieutil + div span.features__value::text').get()
+        try:
+            sizeUtil = int(numPattern.search(sizeUtil.replace('.', ''))[0])
+        except:
+            logging.log(logging.INFO, "superficie util not included")
+
+
+        # Get superficie solar
+        sizeSolar = features.css('span.icon-superficiesolar + div span.features__value::text').get()
+        try:
+            sizeSolar = int(numPattern.search(sizeSolar.replace('.', ''))[0])
+        except:
+            logging.log(logging.INFO, "superficie solar not included")
+
+
+        # Get habitaciones
+        rooms = features.css('span.icon-numhabitaciones + div span.features__value::text').get()
+        try:
+            rooms = int(numPattern.search(rooms)[0])
+        except:
+            logging.log(logging.INFO, "rooms not included")
+
+        # Get banos
+        bathrooms = features.css('span.icon-numbanos + div span.features__value::text').get()
+        try:
+            bathrooms = int(numPattern.search(bathrooms)[0])
+        except:
+            logging.log(logging.INFO, "bathrooms not included")
+
+        # get planta
+        floor = features.css('span.icon-planta + div span.features__value::text').get()
+        try:
+            floor = int(numPattern.search(floor)[0])
+        except:
+            logging.log(logging.INFO, "floor not included")
+
+
+
+
+        # Get energy data
+        energyInfo = response.css('div.energy-certificate__data')
+        Econsumption = CO2emission = Erating = CO2rating = None
+
+        # Get electrict consumption
+        try:
+            Erating      = energyInfo.css('span.energy-certificate__tag::text')[0].get()
+            Econsumption = energyInfo.css('span span::text')[0].get()
+        except:
+            logging.log(logging.INFO, "electricity consumption not included")
+
+        # Get CO2 emission
+        try:
+            CO2rating   = energyInfo.css('span.energy-certificate__tag::text')[1].get()
+            CO2emission = energyInfo.css('span span::text')[1].get()
+        except:
+            logging.log(logging.INFO, "CO2 emission not included")
+
+        exterior      = features.css('span.icon-exterior + div span.features__value::text').get()
+        interior      = features.css('span.icon-interior + div span.features__value::text').get()
+        age           = features.css('span.icon-antiguedad + div span.features__value::text').get()
+        state         = features.css('span.icon-estadoconservacion + div span.features__value::text').get()
+        reference     = features.css('span.icon-reference + div span.features__value::text').get()
+        communityCost = features.css('span.icon-gastosdecomunidad + div span.features__value::text').get()
+        last_update   = response.css('p.last-update__date::text').get()
+
+        yield{
+           'listingName'   : response.url,
+           'location'      : response.meta['fullRegionName'],
+           'sizeConstr'    : sizeConstr,
+           'sizeUtil'      : sizeUtil,
+           'price'         : price,
+           'type'          : response.meta['type'],
+           'bathrooms'     : bathrooms,
+           'rooms'         : rooms,
+           'floor'         : floor,
+           'sizeSolar'     : sizeSolar,
+           'exterior'      : exterior,
+           'interior'      : interior,
+           'age'           : age,
+           'state'         : state,
+           'reference'     : reference,
+           'communityCost' : communityCost,
+           'description'   : description,
+           'Erating'       : Erating,
+           'CO2rating'     : CO2rating,
+           'Econsumption'  : Econsumption,
+           'CO2emission'   : CO2emission,
+           'last_update'   : last_update
+        }
